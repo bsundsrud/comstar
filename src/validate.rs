@@ -4,11 +4,12 @@ use std::{
 };
 
 use anyhow::Result;
+use tokio::sync::mpsc::Sender;
 use url::Url;
 
 use crate::{
     manifest::{self, ManifestEntry},
-    util,
+    util, events::Event,
 };
 
 #[derive(Debug, Clone)]
@@ -50,8 +51,8 @@ impl ValidationDifference {
     }
 }
 
-pub fn verify_manifest(target: &Url, dir: &Path, force: bool) -> Result<Vec<ValidationDifference>> {
-    let manifest = manifest::get_manifest(&target)?;
+pub  async fn verify_manifest(target: &Url, dir: &Path, force: bool, tx: Sender<Event>) -> Result<Vec<ValidationDifference>> {
+    let manifest = manifest::get_manifest(&target).await?;
     let mut differences = Vec::new();
     for e in manifest.entries.iter() {
         let local_path = dir.join(&e.path);

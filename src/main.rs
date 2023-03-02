@@ -9,6 +9,7 @@ mod manifest;
 mod sync;
 mod util;
 mod validate;
+mod events;
 
 fn parse_url(s: &str) -> Result<Url> {
     Ok(Url::parse(s)?)
@@ -90,8 +91,11 @@ fn base_dir(d: Option<PathBuf>) -> Result<PathBuf> {
     Ok(dir.canonicalize()?)
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = Args::from_args();
+
+    let (tx, rx) = tokio::sync::mpsc::channel(50);
     match args {
         Args::Generate { dir, target } => {
             let generate_dir = base_dir(dir)?;
@@ -99,7 +103,9 @@ fn main() -> Result<()> {
                 anyhow::anyhow!("Cannot make URL from directory {}", &generate_dir.display())
             })?;
             let target_url = target.unwrap_or(default_url);
-            let manifest = manifest::generate_manifest(target_url, &generate_dir)?;
+            tokio::spawn(events::event_output(rx, "Generating manifest...".into(), None));
+            
+            let manifest = manifest::generate_manifest(target_url, &generate_dir, tx).await?;
 
             let manifest_file = fs::OpenOptions::new()
                 .truncate(true)
@@ -124,7 +130,9 @@ fn main() -> Result<()> {
                 )
             })?;
             let target_url = manifest.unwrap_or(default_url);
-            let differences = validate::verify_manifest(&target_url, &validate_dir, force)?;
+            tokio::spawn(events::event_output(rx, "Validating Files...".into(), None));
+            
+            let differences = validate::verify_manifest(&target_url, &validate_dir, force, tx).await?;
             if differences.len() == 0 {
                 println!("All files validated.");
             } else {

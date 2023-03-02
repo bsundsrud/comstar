@@ -3,9 +3,10 @@ use std::{fs::File, io::BufReader, path::Path};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::Sender;
 use url::Url;
 
-use crate::util;
+use crate::{util, events::Event};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Manifest {
@@ -21,11 +22,11 @@ pub struct ManifestEntry {
     pub source: Url,
 }
 
-fn get_manifest_http(target: &Url) -> Result<Manifest> {
+async fn get_manifest_http(target: &Url) -> Result<Manifest> {
     Ok(reqwest::blocking::get(target.as_ref())?.json()?)
 }
 
-fn get_manifest_file(target: &Url) -> Result<Manifest> {
+async fn get_manifest_file(target: &Url) -> Result<Manifest> {
     let f = target
         .to_file_path()
         .map_err(|_| anyhow::anyhow!("Invalid file URL: {}", target))?;
@@ -35,15 +36,24 @@ fn get_manifest_file(target: &Url) -> Result<Manifest> {
     Ok(manifest)
 }
 
-pub fn get_manifest(target: &Url) -> Result<Manifest> {
+pub async fn get_manifest(target: &Url) -> Result<Manifest> {
     match target.scheme() {
-        "http" | "https" => get_manifest_http(target),
-        "file" => get_manifest_file(target),
+        "http" | "https" => get_manifest_http(target).await,
+        "file" => get_manifest_file(target).await,
         _ => unimplemented!(),
     }
 }
 
-pub fn generate_manifest(base_url: Url, dir: &Path) -> Result<Manifest> {
+async fn hash_with_events(p: &Path, tx: Sender<Event>) -> Result<String> {
+    let name = p.file_name().ok_or_else(|| anyhow::anyhow!("Invalid file name passed to hash_with_events"))?.to_string_lossy();
+    tx.send(Event::file_started(name.to_string())).await?;
+    let sha512 = util::get_file_hash(&p)?;
+    tx.send(Event::file_done(name.to_string())).await?;
+
+    Ok(sha512)
+}
+
+pub  async fn generate_manifest(base_url: Url, dir: &Path, tx: Sender<Event>) -> Result<Manifest> {
     let walker = util::get_walker(dir)?;
 
     let mut entries = Vec::new();
@@ -60,7 +70,7 @@ pub fn generate_manifest(base_url: Url, dir: &Path) -> Result<Manifest> {
         })?;
         let src_url = base_url.join(relative_url)?;
 
-        let sha512 = util::get_file_hash(&c)?;
+        let sha512 = hash_with_events(&c, tx.clone()).await?;
         entries.push(ManifestEntry {
             path: relative.to_string_lossy().to_string(),
             sha512,
