@@ -1,12 +1,15 @@
-use std::{fs::File, io::BufReader, path::Path};
+use std::{fs::File, io::BufReader, path::Path, sync::Arc};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc::Sender, Semaphore};
 use url::Url;
 
-use crate::{util, events::Event};
+use crate::{
+    events::{self, Event},
+    util,
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Manifest {
@@ -45,38 +48,70 @@ pub async fn get_manifest(target: &Url) -> Result<Manifest> {
 }
 
 async fn hash_with_events(p: &Path, tx: Sender<Event>) -> Result<String> {
-    let name = p.file_name().ok_or_else(|| anyhow::anyhow!("Invalid file name passed to hash_with_events"))?.to_string_lossy();
-    tx.send(Event::file_started(name.to_string())).await?;
+    let name = p
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("Invalid file name passed to hash_with_events"))?
+        .to_string_lossy();
+    tx.send(Event::unknown_file_started(name.to_string()))
+        .await?;
     let sha512 = util::get_file_hash(&p)?;
     tx.send(Event::file_done(name.to_string())).await?;
 
     Ok(sha512)
 }
 
-pub  async fn generate_manifest(base_url: Url, dir: &Path, tx: Sender<Event>) -> Result<Manifest> {
-    let walker = util::get_walker(dir)?;
+pub async fn generate_manifest(base_url: Url, dir: &Path) -> Result<Manifest> {
+    let (tx, rx) = tokio::sync::mpsc::channel(50);
 
+    let walker = util::get_walker(dir)?;
+    let dirents: Vec<ignore::DirEntry> = walker
+        .filter_map(|d| d.ok())
+        .filter(|d| d.path().is_file())
+        .collect();
+    let count = dirents.len();
+    let h = tokio::spawn(events::event_output(
+        rx,
+        "Generating manifest".into(),
+        count as u64,
+    ));
     let mut entries = Vec::new();
-    for dirent in walker {
-        let dirent = dirent?;
-        let c = dirent.path();
+    let mut handles = Vec::new();
+    let sem = Arc::new(Semaphore::new(10));
+    for dirent in dirents {
+        let c = dirent.path().to_path_buf();
         // skip dirs, we only care about files and dirs are implied by paths
         if !c.is_file() {
             continue;
         }
-        let relative = c.strip_prefix(dir)?;
-        let relative_url = relative.to_str().ok_or_else(|| {
-            anyhow::anyhow!("Invalid characters for URL in path: {}", relative.display())
-        })?;
-        let src_url = base_url.join(relative_url)?;
 
-        let sha512 = hash_with_events(&c, tx.clone()).await?;
-        entries.push(ManifestEntry {
-            path: relative.to_string_lossy().to_string(),
-            sha512,
-            source: src_url,
-        })
+        let t = tx.clone();
+        let dir = dir.to_path_buf();
+        let base = base_url.clone();
+        let permit = sem.clone().acquire_owned().await?;
+        let fut = async move {
+            let relative = c.strip_prefix(dir)?;
+            let relative_url = relative.to_str().ok_or_else(|| {
+                anyhow::anyhow!("Invalid characters for URL in path: {}", relative.display())
+            })?;
+            let src_url = base.join(relative_url)?;
+            let sha512 = hash_with_events(&c, t).await?;
+            drop(permit);
+            Ok::<ManifestEntry, anyhow::Error>(ManifestEntry {
+                path: relative.to_string_lossy().to_string(),
+                sha512,
+                source: src_url,
+            })
+        };
+
+        handles.push(tokio::spawn(fut));
     }
+
+    for handle in handles {
+        let e = handle.await??;
+        entries.push(e);
+    }
+    tx.send(Event::close()).await?;
+    h.await??;
     let manifest_file = base_url.join("comstar.json")?;
     Ok(Manifest {
         source: manifest_file,

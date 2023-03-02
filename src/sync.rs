@@ -4,11 +4,12 @@ use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use tokio::{
     io::{AsyncWriteExt, BufWriter},
-    runtime::{self, Runtime}, sync::mpsc::Sender,
+    runtime::{self, Runtime},
+    sync::mpsc::Sender,
 };
 use url::Url;
 
-use crate::{validate, events::Event};
+use crate::{events::Event, validate};
 
 async fn get_file_http(src: &Url, dest: &Path) -> Result<()> {
     let resp = reqwest::get(src.as_ref()).await?;
@@ -47,9 +48,9 @@ pub async fn delete_file(f: &Path) -> Result<()> {
     Ok(())
 }
 
-pub async fn sync_manifest(target: &Url, dir: &Path, force: bool, tx: Sender<Event>) -> Result<()> {
+pub async fn sync_manifest(target: &Url, dir: &Path, force: bool) -> Result<()> {
     // get differences
-    let diff = validate::verify_manifest(target, dir, force, tx.clone()).await?;
+    let diff = validate::verify_manifest(target, dir, force).await?;
     // return early if there's nothing to do
     if diff.is_empty() {
         return Ok(());

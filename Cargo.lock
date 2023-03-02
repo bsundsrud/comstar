@@ -632,6 +632,7 @@ dependencies = [
  "number_prefix",
  "portable-atomic",
  "tokio",
+ "unicode-segmentation",
  "unicode-width",
 ]
 
