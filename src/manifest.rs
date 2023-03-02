@@ -7,14 +7,14 @@ use url::Url;
 
 use crate::util;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Manifest {
     pub source: Url,
     pub generated_at: DateTime<Utc>,
     pub entries: Vec<ManifestEntry>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ManifestEntry {
     pub path: String,
     pub sha512: String,
@@ -28,7 +28,7 @@ fn get_manifest_http(target: &Url) -> Result<Manifest> {
 fn get_manifest_file(target: &Url) -> Result<Manifest> {
     let f = target
         .to_file_path()
-        .map_err(|_| anyhow::format_err!("Invalid file URL: {}", target))?;
+        .map_err(|_| anyhow::anyhow!("Invalid file URL: {}", target))?;
     let file = File::open(&f)?;
     let br = BufReader::new(file);
     let manifest = serde_json::from_reader(br)?;
@@ -56,7 +56,7 @@ pub fn generate_manifest(base_url: Url, dir: &Path) -> Result<Manifest> {
         }
         let relative = c.strip_prefix(dir)?;
         let relative_url = relative.to_str().ok_or_else(|| {
-            anyhow::format_err!("Invalid characters for URL in path: {}", relative.display())
+            anyhow::anyhow!("Invalid characters for URL in path: {}", relative.display())
         })?;
         let src_url = base_url.join(relative_url)?;
 

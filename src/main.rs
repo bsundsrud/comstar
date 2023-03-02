@@ -6,8 +6,10 @@ use url::Url;
 use validate::DifferenceType;
 
 mod manifest;
+mod sync;
 mod util;
 mod validate;
+
 fn parse_url(s: &str) -> Result<Url> {
     Ok(Url::parse(s)?)
 }
@@ -94,7 +96,7 @@ fn main() -> Result<()> {
         Args::Generate { dir, target } => {
             let generate_dir = base_dir(dir)?;
             let default_url = Url::from_directory_path(&generate_dir).map_err(|_| {
-                anyhow::format_err!("Cannot make URL from directory {}", &generate_dir.display())
+                anyhow::anyhow!("Cannot make URL from directory {}", &generate_dir.display())
             })?;
             let target_url = target.unwrap_or(default_url);
             let manifest = manifest::generate_manifest(target_url, &generate_dir)?;
@@ -116,7 +118,7 @@ fn main() -> Result<()> {
             let validate_dir = base_dir(dir)?;
             let default_manifest = validate_dir.join("comstar.json");
             let default_url = Url::from_file_path(&default_manifest).map_err(|_| {
-                anyhow::format_err!(
+                anyhow::anyhow!(
                     "Cannot make URL from directory {}",
                     &default_manifest.display()
                 )
@@ -134,7 +136,7 @@ fn main() -> Result<()> {
                 for diff in differences {
                     let p = diff.path.to_string_lossy();
                     match &diff.ty {
-                        DifferenceType::FileMissing => {
+                        DifferenceType::FileMissing(_) => {
                             missing_count += 1;
                             println!("  MISSING FILE: {}", p);
                         }

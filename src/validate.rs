@@ -6,12 +6,18 @@ use std::{
 use anyhow::Result;
 use url::Url;
 
-use crate::{manifest, util};
+use crate::{
+    manifest::{self, ManifestEntry},
+    util,
+};
 
 #[derive(Debug, Clone)]
 pub enum DifferenceType {
-    FileMissing,
-    HashMismatch { upstream: String, local: String },
+    FileMissing(ManifestEntry),
+    HashMismatch {
+        upstream: ManifestEntry,
+        local: String,
+    },
     UnknownFile,
 }
 
@@ -22,14 +28,14 @@ pub struct ValidationDifference {
 }
 
 impl ValidationDifference {
-    fn missing<P: Into<PathBuf>>(path: P) -> Self {
+    fn missing<P: Into<PathBuf>>(path: P, entry: ManifestEntry) -> Self {
         Self {
-            ty: DifferenceType::FileMissing,
+            ty: DifferenceType::FileMissing(entry),
             path: path.into(),
         }
     }
 
-    fn hash_mismatch<P: Into<PathBuf>>(path: P, upstream: String, local: String) -> Self {
+    fn hash_mismatch<P: Into<PathBuf>>(path: P, upstream: ManifestEntry, local: String) -> Self {
         Self {
             ty: DifferenceType::HashMismatch { upstream, local },
             path: path.into(),
@@ -50,14 +56,14 @@ pub fn verify_manifest(target: &Url, dir: &Path, force: bool) -> Result<Vec<Vali
     for e in manifest.entries.iter() {
         let local_path = dir.join(&e.path);
         if !local_path.exists() {
-            differences.push(ValidationDifference::missing(&e.path));
+            differences.push(ValidationDifference::missing(&e.path, e.clone()));
             continue;
         }
         let sha512 = util::get_file_hash(&local_path)?;
         if sha512 != e.sha512 {
             differences.push(ValidationDifference::hash_mismatch(
                 &e.path,
-                e.sha512.clone(),
+                e.clone(),
                 sha512,
             ))
         }
