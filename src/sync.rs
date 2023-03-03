@@ -17,6 +17,9 @@ async fn get_file_http(src: &Url, dest: &Path, tx: Sender<Event>) -> Result<()> 
     let resp = reqwest::get(src.as_ref()).await?;
     let fname = dest.file_name().unwrap().to_string_lossy().to_string();
     let mut stream = resp.bytes_stream();
+    if let Some(p) = dest.parent() {
+        fs::create_dir_all(p)?;
+    }
     let f = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
