@@ -58,7 +58,7 @@ pub async fn verify_manifest(
     dir: &Path,
     force: bool,
 ) -> Result<Vec<ValidationDifference>> {
-    let (tx, rx) = tokio::sync::mpsc::channel(1000);
+    let (tx, rx) = tokio::sync::mpsc::channel(50);
     let manifest = manifest::get_manifest(&target).await?;
     let mut differences = Vec::new();
     let h = tokio::spawn(events::event_output(

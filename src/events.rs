@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use tokio::{sync::mpsc::Receiver, time::Instant};
+use tokio::sync::mpsc::Receiver;
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -17,13 +17,6 @@ impl Event {
         Event::FileStarted {
             name: name.into(),
             size: None,
-        }
-    }
-
-    pub fn file_started<S: Into<String>>(name: S, size: u64) -> Self {
-        Event::FileStarted {
-            name: name.into(),
-            size: Some(size),
         }
     }
 
@@ -61,13 +54,6 @@ fn create_unknown_spinner() -> ProgressBar {
     pb
 }
 
-fn header_spinner() -> ProgressBar {
-    let style = ProgressStyle::with_template("{spinner} {msg} ({pos}/? {elapsed})").unwrap();
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(style);
-    pb
-}
-
 fn header_progress(max: u64) -> ProgressBar {
     let style = ProgressStyle::with_template("[{bar}] {msg} ({pos}/{len} {elapsed})").unwrap();
     let pb = ProgressBar::new(max);
@@ -98,6 +84,11 @@ pub async fn event_output(mut ch: Receiver<Event>, action: String, max_items: u6
                 }
                 Event::FileProgress { name, bytes } => {
                     if let Some(pb) = current_pbs.get(&name) {
+                        let style = ProgressStyle::with_template(
+                            "  {spinner} {msg} ({bytes}, {binary_bytes_per_sec} {elapsed})",
+                        )
+                        .unwrap();
+                        pb.set_style(style);
                         pb.inc(bytes);
                     }
                 }
@@ -114,6 +105,7 @@ pub async fn event_output(mut ch: Receiver<Event>, action: String, max_items: u6
         }
     }
     mp.clear()?;
+    header.set_style(ProgressStyle::with_template("{msg} ({pos}/{len} {elapsed})").unwrap());
     header.finish_with_message(format!("{}: Done.", action));
     Ok(())
 }

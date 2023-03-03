@@ -113,7 +113,22 @@ async fn main() -> Result<()> {
             let writer = BufWriter::new(manifest_file);
             serde_json::to_writer_pretty(writer, &manifest)?;
         }
-        Args::Sync { .. } => todo!(),
+        Args::Sync {
+            manifest,
+            dir,
+            force,
+        } => {
+            let sync_dir = base_dir(dir)?;
+            let default_manifest = sync_dir.join("comstar.json");
+            let default_url = Url::from_directory_path(&default_manifest).map_err(|_| {
+                anyhow::anyhow!(
+                    "Cannot make URL from directory {}",
+                    &default_manifest.display()
+                )
+            })?;
+            let target_url = manifest.unwrap_or(default_url);
+            sync::sync_manifest(&target_url, &sync_dir, force).await?;
+        }
         Args::Validate {
             manifest,
             dir,
