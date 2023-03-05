@@ -78,10 +78,10 @@ pub async fn sync_manifest(target: &Url, dir: &Path, force: bool) -> Result<()> 
     for d in diff {
         let t = tx.clone();
         let permit = sem.clone().acquire_owned().await?;
-        let sync_path = dir.join(&d.path);
+        let sync_path = d.path.to_logical_path(dir);
 
         let fut = async move {
-            let fname = &d.path.file_name().unwrap().to_string_lossy().to_string();
+            let fname = &d.path.file_name().unwrap().to_string();
             t.send(Event::unknown_file_started(fname)).await?;
             match d.ty {
                 validate::DifferenceType::FileMissing(entry) => {

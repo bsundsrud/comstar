@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
+use relative_path::RelativePathBuf;
 use tokio::sync::Semaphore;
 use url::Url;
 
@@ -27,25 +28,29 @@ pub enum DifferenceType {
 #[derive(Debug)]
 pub struct ValidationDifference {
     pub ty: DifferenceType,
-    pub path: PathBuf,
+    pub path: RelativePathBuf,
 }
 
 impl ValidationDifference {
-    fn missing<P: Into<PathBuf>>(path: P, entry: ManifestEntry) -> Self {
+    fn missing<P: Into<RelativePathBuf>>(path: P, entry: ManifestEntry) -> Self {
         Self {
             ty: DifferenceType::FileMissing(entry),
             path: path.into(),
         }
     }
 
-    fn hash_mismatch<P: Into<PathBuf>>(path: P, upstream: ManifestEntry, local: String) -> Self {
+    fn hash_mismatch<P: Into<RelativePathBuf>>(
+        path: P,
+        upstream: ManifestEntry,
+        local: String,
+    ) -> Self {
         Self {
             ty: DifferenceType::HashMismatch { upstream, local },
             path: path.into(),
         }
     }
 
-    fn unknown_file<P: Into<PathBuf>>(path: P) -> Self {
+    fn unknown_file<P: Into<RelativePathBuf>>(path: P) -> Self {
         Self {
             ty: DifferenceType::UnknownFile,
             path: path.into(),
@@ -70,7 +75,8 @@ pub async fn verify_manifest(
     let mut handles = Vec::new();
 
     for e in manifest.entries.iter() {
-        let local_path = dir.join(&e.path);
+        //let local_path = dir.join(&e.path);
+        let local_path = e.path.to_logical_path(&dir);
         let fname = local_path
             .file_name()
             .unwrap()
@@ -109,7 +115,11 @@ pub async fn verify_manifest(
     h.await??;
     if force {
         let (tx, rx) = tokio::sync::mpsc::channel(50);
-        let fnames: HashSet<PathBuf> = manifest.entries.iter().map(|e| dir.join(&e.path)).collect();
+        let fnames: HashSet<PathBuf> = manifest
+            .entries
+            .iter()
+            .map(|e| e.path.to_logical_path(&dir))
+            .collect();
 
         let walker: Vec<ignore::DirEntry> = util::get_walker(&dir)?
             .filter_map(|d| d.ok())
@@ -122,10 +132,11 @@ pub async fn verify_manifest(
         ));
         for dirent in walker {
             let path = dirent.path();
+            let relative = RelativePathBuf::from_path(path.strip_prefix(dir)?)?;
             let fname = path.file_name().unwrap().to_string_lossy();
             tx.send(Event::unknown_file_started(fname.clone())).await?;
             if !fnames.contains(path) {
-                differences.push(ValidationDifference::unknown_file(path));
+                differences.push(ValidationDifference::unknown_file(relative));
             }
             tx.send(Event::file_done(fname.clone())).await?;
         }

@@ -2,6 +2,7 @@ use std::{fs::File, io::BufReader, path::Path, sync::Arc};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use relative_path::{RelativePath, RelativePathBuf};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc::Sender, Semaphore};
 use url::Url;
@@ -20,7 +21,7 @@ pub struct Manifest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ManifestEntry {
-    pub path: String,
+    pub path: RelativePathBuf,
     pub sha512: String,
     pub source: Url,
 }
@@ -89,15 +90,12 @@ pub async fn generate_manifest(base_url: Url, dir: &Path) -> Result<Manifest> {
         let base = base_url.clone();
         let permit = sem.clone().acquire_owned().await?;
         let fut = async move {
-            let relative = c.strip_prefix(dir)?;
-            let relative_url = relative.to_str().ok_or_else(|| {
-                anyhow::anyhow!("Invalid characters for URL in path: {}", relative.display())
-            })?;
-            let src_url = base.join(relative_url)?;
+            let relative = RelativePath::from_path(c.strip_prefix(dir)?)?;
+            let src_url = base.join(relative.as_str())?;
             let sha512 = hash_with_events(&c, t).await?;
             drop(permit);
             Ok::<ManifestEntry, anyhow::Error>(ManifestEntry {
-                path: relative.to_string_lossy().to_string(),
+                path: relative.to_owned(),
                 sha512,
                 source: src_url,
             })

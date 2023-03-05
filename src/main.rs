@@ -154,7 +154,7 @@ async fn main() -> Result<()> {
                 println!("DIFFERENCES");
                 println!("-----------");
                 for diff in differences {
-                    let p = diff.path.to_string_lossy();
+                    let p = diff.path;
                     match &diff.ty {
                         DifferenceType::FileMissing(_) => {
                             missing_count += 1;
