@@ -26,10 +26,12 @@ pub struct ManifestEntry {
     pub source: Url,
 }
 
+#[tracing::instrument]
 async fn get_manifest_http(target: &Url) -> Result<Manifest> {
-    Ok(reqwest::blocking::get(target.as_ref())?.json()?)
+    Ok(reqwest::get(target.as_ref()).await?.json().await?)
 }
 
+#[tracing::instrument]
 async fn get_manifest_file(target: &Url) -> Result<Manifest> {
     let f = target
         .to_file_path()
@@ -40,6 +42,7 @@ async fn get_manifest_file(target: &Url) -> Result<Manifest> {
     Ok(manifest)
 }
 
+#[tracing::instrument]
 pub async fn get_manifest(target: &Url) -> Result<Manifest> {
     match target.scheme() {
         "http" | "https" => get_manifest_http(target).await,
@@ -48,6 +51,7 @@ pub async fn get_manifest(target: &Url) -> Result<Manifest> {
     }
 }
 
+#[tracing::instrument]
 async fn hash_with_events(p: &Path, tx: Sender<Event>) -> Result<String> {
     let name = p
         .file_name()
@@ -61,6 +65,7 @@ async fn hash_with_events(p: &Path, tx: Sender<Event>) -> Result<String> {
     Ok(sha512)
 }
 
+#[tracing::instrument]
 pub async fn generate_manifest(base_url: Url, dir: &Path) -> Result<Manifest> {
     let (tx, rx) = tokio::sync::mpsc::channel(50);
 

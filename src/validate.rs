@@ -58,6 +58,7 @@ impl ValidationDifference {
     }
 }
 
+#[tracing::instrument]
 pub async fn verify_manifest(
     target: &Url,
     dir: &Path,

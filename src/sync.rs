@@ -3,7 +3,7 @@ use std::{fs, path::Path, sync::Arc};
 use anyhow::{anyhow, Result};
 use futures::StreamExt;
 use tokio::{
-    io::BufWriter,
+    io::AsyncWriteExt,
     sync::{mpsc::Sender, Semaphore},
 };
 use url::Url;
@@ -13,24 +13,25 @@ use crate::{
     validate,
 };
 
+#[tracing::instrument]
 async fn get_file_http(src: &Url, dest: &Path, tx: Sender<Event>) -> Result<()> {
     let resp = reqwest::get(src.as_ref()).await?;
     let fname = dest.file_name().unwrap().to_string_lossy().to_string();
-    let mut stream = resp.bytes_stream();
     if let Some(p) = dest.parent() {
         fs::create_dir_all(p)?;
     }
-    let f = tokio::fs::OpenOptions::new()
+    let mut stream = resp.bytes_stream();
+    let mut f = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .open(dest)
         .await?;
-    let mut writer = BufWriter::new(f);
-    while let Some(v) = stream.next().await {
-        let bytes = v?;
-        tx.send(Event::file_progress(&fname, bytes.len() as u64))
-            .await?;
-        tokio::io::copy_buf(&mut bytes.as_ref(), &mut writer).await?;
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result?;
+        let len = chunk.len() as u64;
+        f.write_all(&chunk).await?;
+        tx.send(Event::file_progress(&fname, len)).await?;
     }
     Ok(())
 }
@@ -46,6 +47,7 @@ async fn get_file_file(src: &Url, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+#[tracing::instrument]
 pub async fn get_file(src: &Url, dest: &Path, t: Sender<Event>) -> Result<()> {
     match src.scheme() {
         "http" | "https" => get_file_http(src, dest, t).await,
@@ -59,6 +61,7 @@ pub async fn delete_file(f: &Path) -> Result<()> {
     Ok(())
 }
 
+#[tracing::instrument]
 pub async fn sync_manifest(target: &Url, dir: &Path, force: bool) -> Result<()> {
     // get differences
     let diff = validate::verify_manifest(target, dir, force).await?;

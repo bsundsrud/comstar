@@ -61,6 +61,7 @@ fn header_progress(max: u64) -> ProgressBar {
     pb
 }
 
+#[tracing::instrument]
 pub async fn event_output(mut ch: Receiver<Event>, action: String, max_items: u64) -> Result<()> {
     let mp = MultiProgress::new();
     let mut current_pbs: HashMap<String, ProgressBar> = HashMap::new();
