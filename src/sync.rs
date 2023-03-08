@@ -24,6 +24,7 @@ async fn get_file_http(src: &Url, dest: &Path, tx: Sender<Event>) -> Result<()> 
     let mut f = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
+        .truncate(true)
         .open(dest)
         .await?;
 
