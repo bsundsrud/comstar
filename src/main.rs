@@ -1,6 +1,7 @@
 use std::{fs, io::BufWriter, path::PathBuf};
 
 use anyhow::{bail, Result};
+use relative_path::RelativePathBuf;
 use structopt::StructOpt;
 use url::Url;
 use validate::DifferenceType;
@@ -17,8 +18,29 @@ fn parse_url(s: &str) -> Result<Url> {
 }
 
 #[derive(Debug, StructOpt)]
+#[structopt(about = "Push directory changes to online storage.")]
 enum PushArgs {
-    Google {},
+    #[structopt(about = "Push to GCS.")]
+    Google {
+        #[structopt(
+            short,
+            long,
+            parse(try_from_str = parse_url),
+            help = "URI to manifest to diff against. If it does not exist, comstar will assume a first push and push all."
+        )]
+        manifest: Url,
+        #[structopt(
+            short,
+            long,
+            parse(from_os_str),
+            help = "Directory to push. Default is current directory."
+        )]
+        dir: Option<PathBuf>,
+        #[structopt(short, long, help = "Bucket name to push to")]
+        bucket: String,
+        #[structopt(short = "p", long = "bucket-path", help = "Path prefix inside bucket.")]
+        bucket_path: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, StructOpt)]
@@ -104,9 +126,36 @@ async fn main() -> Result<()> {
     let args = Args::from_args();
 
     match args {
-        Args::Push(pa) => {
-            unimplemented!()
-        }
+        Args::Push(pa) => match pa {
+            PushArgs::Google {
+                manifest,
+                dir,
+                bucket,
+                bucket_path,
+            } => {
+                let local_dir = base_dir(dir)?;
+                let bucket_prefix = bucket_path.map(|pb| RelativePathBuf::from_path(pb).unwrap());
+                let local_manifest =
+                    manifest::generate_manifest(manifest.clone(), &local_dir).await?;
+                let manifest_file = fs::OpenOptions::new()
+                    .truncate(true)
+                    .write(true)
+                    .create(true)
+                    .open(&local_dir.join("comstar.json"))?;
+                let writer = BufWriter::new(manifest_file);
+                serde_json::to_writer_pretty(writer, &local_manifest)?;
+                let remote_manifest = manifest::get_manifest(&manifest).await?;
+
+                push::gcs::push_dir(
+                    &local_dir,
+                    &local_manifest,
+                    remote_manifest.as_ref(),
+                    &bucket,
+                    bucket_prefix,
+                )
+                .await?;
+            }
+        },
         Args::Generate { dir, target } => {
             let generate_dir = base_dir(dir)?;
             let default_url = Url::from_directory_path(&generate_dir).map_err(|_| {

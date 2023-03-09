@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use relative_path::RelativePathBuf;
 use tokio::sync::Semaphore;
 use url::Url;
@@ -65,7 +65,7 @@ pub async fn verify_manifest(
     force: bool,
 ) -> Result<Vec<ValidationDifference>> {
     let (tx, rx) = tokio::sync::mpsc::channel(50);
-    let manifest = manifest::get_manifest(&target).await?;
+    let manifest = manifest::get_manifest(&target).await?.ok_or_else(|| anyhow!("Remote manifest not found: {}", &target))?;
     let mut differences = Vec::new();
     let h = tokio::spawn(events::event_output(
         rx,

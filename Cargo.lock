@@ -223,12 +223,14 @@ name = "comstar"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-compression",
  "chrono",
  "futures",
  "google-cloud-default",
  "google-cloud-storage",
  "ignore",
  "indicatif",
+ "mime_guess",
  "path-slash",
  "relative-path",
  "reqwest",
@@ -237,6 +239,7 @@ dependencies = [
  "sha2",
  "structopt",
  "tokio",
+ "tokio-util",
  "tracing",
  "url",
 ]

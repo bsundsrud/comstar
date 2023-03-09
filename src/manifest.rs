@@ -1,9 +1,10 @@
 use std::{fs::File, io::BufReader, path::Path, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use path_slash::PathExt;
 use relative_path::{RelativePath, RelativePathBuf};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc::Sender, Semaphore};
 use url::Url;
@@ -28,23 +29,33 @@ pub struct ManifestEntry {
 }
 
 #[tracing::instrument]
-async fn get_manifest_http(target: &Url) -> Result<Manifest> {
-    Ok(reqwest::get(target.as_ref()).await?.json().await?)
+async fn get_manifest_http(target: &Url) -> Result<Option<Manifest>> {
+    let resp = reqwest::get(target.as_ref()).await?;
+    if resp.status() == StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !resp.status().is_success() {
+        return Err(anyhow!("Could not retrieve manifest: {} {}", resp.status(), resp.text().await?));
+    }
+    Ok(Some(resp.json().await?))
 }
 
 #[tracing::instrument]
-async fn get_manifest_file(target: &Url) -> Result<Manifest> {
+async fn get_manifest_file(target: &Url) -> Result<Option<Manifest>> {
     let f = target
         .to_file_path()
         .map_err(|_| anyhow::anyhow!("Invalid file URL: {}", target))?;
+    if !f.exists() || !f.is_file() {
+        return Ok(None);
+    }
     let file = File::open(&f)?;
     let br = BufReader::new(file);
     let manifest = serde_json::from_reader(br)?;
-    Ok(manifest)
+    Ok(Some(manifest))
 }
 
 #[tracing::instrument]
-pub async fn get_manifest(target: &Url) -> Result<Manifest> {
+pub async fn get_manifest(target: &Url) -> Result<Option<Manifest>> {
     match target.scheme() {
         "http" | "https" => get_manifest_http(target).await,
         "file" => get_manifest_file(target).await,
