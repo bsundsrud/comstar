@@ -7,6 +7,7 @@ use validate::DifferenceType;
 
 mod events;
 mod manifest;
+mod push;
 mod sync;
 mod util;
 mod validate;
@@ -16,8 +17,14 @@ fn parse_url(s: &str) -> Result<Url> {
 }
 
 #[derive(Debug, StructOpt)]
+enum PushArgs {
+    Google {},
+}
+
+#[derive(Debug, StructOpt)]
 #[structopt(about = "Sync files from a static source.")]
 enum Args {
+    Push(PushArgs),
     #[structopt(about = "Generate manifests for directories.")]
     Generate {
         #[structopt(
@@ -58,6 +65,7 @@ enum Args {
         )]
         force: bool,
     },
+    #[structopt(about = "Validate a directory against a manifest.")]
     Validate {
         #[structopt(
             short,
@@ -96,6 +104,9 @@ async fn main() -> Result<()> {
     let args = Args::from_args();
 
     match args {
+        Args::Push(pa) => {
+            unimplemented!()
+        }
         Args::Generate { dir, target } => {
             let generate_dir = base_dir(dir)?;
             let default_url = Url::from_directory_path(&generate_dir).map_err(|_| {
