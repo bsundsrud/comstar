@@ -1,6 +1,11 @@
-use std::{fs::File, io::BufReader, path::Path, sync::Arc};
+use std::{
+    fs::{self, File},
+    io::{BufReader, BufWriter},
+    path::Path,
+    sync::Arc,
+};
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use path_slash::PathExt;
 use relative_path::{RelativePath, RelativePathBuf};
@@ -35,7 +40,11 @@ async fn get_manifest_http(target: &Url) -> Result<Option<Manifest>> {
         return Ok(None);
     }
     if !resp.status().is_success() {
-        return Err(anyhow!("Could not retrieve manifest: {} {}", resp.status(), resp.text().await?));
+        return Err(anyhow!(
+            "Could not retrieve manifest: {} {}",
+            resp.status(),
+            resp.text().await?
+        ));
     }
     Ok(Some(resp.json().await?))
 }
@@ -75,6 +84,17 @@ async fn hash_with_events(p: &Path, tx: Sender<Event>) -> Result<String> {
     tx.send(Event::file_done(name.to_string())).await?;
 
     Ok(sha512)
+}
+
+pub fn write_manifest(manifest: &Manifest, dir: &Path) -> Result<()> {
+    let manifest_file = fs::OpenOptions::new()
+        .truncate(true)
+        .write(true)
+        .create(true)
+        .open(&dir.join("comstar.json"))?;
+    let writer = BufWriter::new(manifest_file);
+    serde_json::to_writer_pretty(writer, &manifest)?;
+    Ok(())
 }
 
 #[tracing::instrument]

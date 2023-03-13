@@ -86,6 +86,11 @@ enum Args {
             help = "Ensure that ONLY files in the manifest are at the destination. Deletes any file not in the manifest."
         )]
         force: bool,
+        #[structopt(
+            long = "validate",
+            help = "Force validation of local files instead of trusting the local manifest"
+        )]
+        force_validate: bool,
     },
     #[structopt(about = "Validate a directory against a manifest.")]
     Validate {
@@ -177,6 +182,7 @@ async fn main() -> Result<()> {
             manifest,
             dir,
             force,
+            force_validate,
         } => {
             let sync_dir = base_dir(dir)?;
             let default_manifest = sync_dir.join("comstar.json");
@@ -187,7 +193,7 @@ async fn main() -> Result<()> {
                 )
             })?;
             let target_url = manifest.unwrap_or(default_url);
-            sync::sync_manifest(&target_url, &sync_dir, force).await?;
+            sync::sync_manifest(&target_url, &sync_dir, force, force_validate).await?;
         }
         Args::Validate {
             manifest,

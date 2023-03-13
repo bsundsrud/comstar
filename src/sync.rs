@@ -10,7 +10,7 @@ use url::Url;
 
 use crate::{
     events::{self, Event},
-    validate,
+    manifest, validate,
 };
 
 #[tracing::instrument]
@@ -63,9 +63,35 @@ pub async fn delete_file(f: &Path) -> Result<()> {
 }
 
 #[tracing::instrument]
-pub async fn sync_manifest(target: &Url, dir: &Path, force: bool) -> Result<()> {
+pub async fn sync_manifest(
+    target: &Url,
+    dir: &Path,
+    force: bool,
+    force_validate: bool,
+) -> Result<()> {
+    let local_manifest = dir.join("comstar.json");
     // get differences
-    let diff = validate::verify_manifest(target, dir, force).await?;
+    let diff = if local_manifest.exists() && local_manifest.is_file() && !force_validate {
+        if let Some(d) = validate::diff_manifests(
+            target,
+            &Url::from_file_path(&local_manifest).map_err(|_| {
+                anyhow!(
+                    "Could not create URL from path {}",
+                    &local_manifest.display()
+                )
+            })?,
+            force,
+        )
+        .await?
+        {
+            d
+        } else {
+            validate::verify_manifest(target, dir, force).await?
+        }
+    } else {
+        validate::verify_manifest(target, dir, force).await?
+    };
+
     // return early if there's nothing to do
     if diff.is_empty() {
         return Ok(());
@@ -110,6 +136,12 @@ pub async fn sync_manifest(target: &Url, dir: &Path, force: bool) -> Result<()> 
     }
     tx.send(Event::close()).await?;
     h.await??;
-
+    let new_manifest = manifest::get_manifest(&target).await?.ok_or_else(|| {
+        anyhow!(
+            "Somehow we reached the end of sync and the remote manifest disappeared: {}",
+            &target
+        )
+    })?;
+    manifest::write_manifest(&new_manifest, dir)?;
     Ok(())
 }

@@ -1,11 +1,11 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use anyhow::{Result, anyhow};
-use relative_path::RelativePathBuf;
+use anyhow::{anyhow, Result};
+use relative_path::{RelativePath, RelativePathBuf};
 use tokio::sync::Semaphore;
 use url::Url;
 
@@ -59,13 +59,65 @@ impl ValidationDifference {
 }
 
 #[tracing::instrument]
+pub async fn diff_manifests(
+    authority: &Url,
+    other: &Url,
+    force: bool,
+) -> Result<Option<Vec<ValidationDifference>>> {
+    let authority_manifest = manifest::get_manifest(authority)
+        .await?
+        .ok_or_else(|| anyhow!("Remote manifest not found: {}", &authority))?;
+    let local_manifest = manifest::get_manifest(other).await?;
+
+    if let Some(local) = local_manifest {
+        let mut differences = Vec::new();
+        let authority_entries: HashMap<&RelativePath, &ManifestEntry> = authority_manifest
+            .entries
+            .iter()
+            .map(|e| (e.path.as_ref(), e))
+            .collect();
+        let local_entries: HashMap<&RelativePath, &ManifestEntry> =
+            local.entries.iter().map(|e| (e.path.as_ref(), e)).collect();
+
+        for (k, v) in authority_entries.iter() {
+            if let Some(local_entry) = local_entries.get(k) {
+                if local_entry.sha512 != v.sha512 {
+                    differences.push(ValidationDifference::hash_mismatch(
+                        v.path.to_relative_path_buf(),
+                        (*v).clone(),
+                        local_entry.sha512.to_string(),
+                    ));
+                }
+            } else {
+                differences.push(ValidationDifference::missing(
+                    v.path.to_relative_path_buf(),
+                    (*v).clone(),
+                ))
+            }
+        }
+        if force {
+            for (k, v) in local_entries {
+                if !authority_entries.contains_key(&k) {
+                    differences.push(ValidationDifference::unknown_file(v.path.clone()));
+                }
+            }
+        }
+        Ok(Some(differences))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tracing::instrument]
 pub async fn verify_manifest(
     target: &Url,
     dir: &Path,
     force: bool,
 ) -> Result<Vec<ValidationDifference>> {
     let (tx, rx) = tokio::sync::mpsc::channel(50);
-    let manifest = manifest::get_manifest(&target).await?.ok_or_else(|| anyhow!("Remote manifest not found: {}", &target))?;
+    let manifest = manifest::get_manifest(&target)
+        .await?
+        .ok_or_else(|| anyhow!("Remote manifest not found: {}", &target))?;
     let mut differences = Vec::new();
     let h = tokio::spawn(events::event_output(
         rx,
