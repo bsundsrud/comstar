@@ -84,8 +84,10 @@ pub async fn sync_manifest(
         )
         .await?
         {
+            println!("Syncing against manifest, {} changes found.", d.len());
             d
         } else {
+            println!("Could not sync against manifest, running full validation.");
             validate::verify_manifest(target, dir, force).await?
         }
     } else {
