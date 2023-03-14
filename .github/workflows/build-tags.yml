@@ -1,0 +1,31 @@
+name: build-release
+on:
+  release: 
+    types: [published]
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+      - name: Release (Windows)
+        uses: softprops/action-gh-release@v1
+        if: matrix.os == "windows-latest"
+        with:
+          files: target/release/comstar.exe
+      - name: Release (Linux)
+        uses: softprops/action-gh-release@v1
+        if: matrix.os == "ubuntu-latest"
+        with:
+          files: target/release/comstar
+
