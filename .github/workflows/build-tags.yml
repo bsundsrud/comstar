@@ -20,12 +20,12 @@ jobs:
           args: --release
       - name: Release (Windows)
         uses: softprops/action-gh-release@v1
-        if: matrix.os == "windows-latest"
+        if: matrix.os == 'windows-latest'
         with:
           files: target/release/comstar.exe
       - name: Release (Linux)
         uses: softprops/action-gh-release@v1
-        if: matrix.os == "ubuntu-latest"
+        if: matrix.os == 'ubuntu-latest'
         with:
           files: target/release/comstar
 
